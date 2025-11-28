@@ -2,7 +2,9 @@ package phorest
 
 import (
 	"fmt"
+	"io"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -176,5 +178,82 @@ func (r *Runner) importSingleClientsCSV(csvPath string) error {
 		return err
 	}
 	lg.Printf("✅ Clients CSV %s committed.", csvPath)
+	return nil
+}
+
+// archiveCSVToSeed copies a CSV from srcPath into destDir
+// so it becomes part of the “bootstrap” dataset.
+func (r *Runner) archiveCSVToSeed(srcPath, destDir string) {
+	lg := r.Logger
+
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		lg.Printf("⚠️  archiveCSVToSeed: unable to create dir %s: %v", destDir, err)
+		return
+	}
+
+	dstPath := filepath.Join(destDir, filepath.Base(srcPath))
+
+	// Don’t hard fail the sync if this fails – just log it.
+	if err := copyFile(srcPath, dstPath); err != nil {
+		lg.Printf("⚠️  archiveCSVToSeed: copy %s → %s failed: %v", srcPath, dstPath, err)
+		return
+	}
+
+	lg.Printf("📦 Archived %s → %s (for future bootstrap)", srcPath, dstPath)
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = out.Close()
+	}()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+
+	// Make sure it’s flushed
+	return out.Sync()
+}
+
+func (r *Runner) BootstrapFromCSVsIfNeeded() error {
+	lg := r.Logger
+
+	var count int64
+	if err := r.DB.Table("sync_watermarks").
+		Where("entity IN ?", []string{"clients_csv", "transactions_csv"}).
+		Count(&count).Error; err != nil {
+		return fmt.Errorf("check CSV watermarks: %w", err)
+	}
+
+	if count > 0 {
+		lg.Printf("⏭  CSV bootstrap already done (%d CSV watermarks present); skipping initial CSV imports.", count)
+		return nil
+	}
+
+	lg.Println("📥 Running one-off CSV bootstrap (transactions + clients)...")
+
+	if err := r.ImportAllTransactionsCSVs("data/transactions"); err != nil {
+		return fmt.Errorf("bootstrap transactions CSVs: %w", err)
+	}
+
+	if err := r.ImportAllClientCSVs("data/clients"); err != nil {
+		return fmt.Errorf("bootstrap clients CSVs: %w", err)
+	}
+
+	if err := r.BootstrapWatermarks(); err != nil {
+		return fmt.Errorf("bootstrap watermarks: %w", err)
+	}
+
+	lg.Println("✅ CSV bootstrap completed and watermarks seeded.")
 	return nil
 }

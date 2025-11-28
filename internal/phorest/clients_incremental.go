@@ -85,6 +85,9 @@ func (r *Runner) RunIncrementalClientsSync(ctx context.Context) error {
 		return fmt.Errorf("import incremental clients csv: %w", err)
 	}
 
+	// Archive this CSV into the bootstrap clients dir
+	r.archiveCSVToSeed(dest, "data/clients")
+
 	lg.Printf("✅ Incremental CLIENT_CSV sync finished")
 	return nil
 }

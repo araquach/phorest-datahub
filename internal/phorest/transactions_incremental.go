@@ -107,10 +107,13 @@ func (r *Runner) RunIncrementalTransactionsSync(ctx context.Context) error {
 
 		// 6) Re-use your existing CSV import logic
 		if err := r.importSingleTransactionsCSV(dest); err != nil {
-			return fmt.Errorf("%s: import incremental transactions csv: %w", b.BranchID, err)
+			return fmt.Errorf("import incremental transactions csv %s: %w", dest, err)
 		}
 
-		lg.Printf("✅ %s: Incremental TRANSACTIONS_CSV sync finished", b.BranchID)
+		// Archive this CSV into the bootstrap transactions dir
+		r.archiveCSVToSeed(dest, "data/transactions")
+
+		lg.Printf("✅ TRANSACTIONS_CSV incremental sync finished for %s", b.BranchID)
 	}
 
 	lg.Printf("✅ All branches incremental TRANSACTIONS_CSV sync finished")
