@@ -34,7 +34,6 @@ func main() {
 	}
 	logger.Println("✅ Database connection healthy.")
 
-	// Real Migrator
 	if cfg.AutoMigrate {
 		logger.Println("Running SQL migrations...")
 		if err := db.RunMigrations(cfg.DatabaseURL, "migrations", logger); err != nil {
@@ -51,14 +50,20 @@ func main() {
 
 	runner := phorest.NewRunner(gdb, cfg, logger)
 
-	// 🔹 ONE-OFF bootstrap from local CSVs, then seed watermarks.
-	//     - First run: imports data/transactions + data/clients and calls BootstrapWatermarks()
-	//     - Later runs: detects existing CSV watermarks and skips entirely.
+	// ---------- BOOTSTRAP PHASE ----------
+
+	// Clients + transactions from local CSVs (only on fresh DB)
 	if err := runner.BootstrapFromCSVsIfNeeded(); err != nil {
 		logger.Fatalf("CSV bootstrap failed: %v", err)
 	}
 
-	// 🔹 Ongoing API-based syncs (safe to run every time)
+	// Reviews from local CSV backups (only on fresh DB)
+	if err := runner.BootstrapReviewsFromCSVsIfNeeded(); err != nil {
+		logger.Fatalf("Reviews CSV bootstrap failed: %v", err)
+	}
+
+	// ---------- ONGOING “EVERY RUN” API SYNC ----------
+
 	if err := runner.SyncStaffFromAPI(); err != nil {
 		logger.Fatalf("staff sync failed: %v", err)
 	}
@@ -67,13 +72,11 @@ func main() {
 		logger.Printf("branch sync ended with errors: %v", err)
 	}
 
-	if err := runner.SyncLatestReviewsFromAPI(10); err != nil {
-		logger.Printf("reviews latest-N sync ended with errors: %v", err)
-	}
+	// ---------- INCREMENTAL CSV + REVIEWS (ENV-GUARDED) ----------
 
-	// 🔹 Incremental CSV export → download → import, guarded by env flag
+	// Clients incremental (CLIENT_CSV)
 	if os.Getenv("RUN_CLIENTS_INCREMENTAL") == "1" {
-		logger.Println("🚀 Running incremental CLIENT_CSV & TRANSACTIONS_CSV sync…")
+		logger.Println("🚀 Running incremental CLIENT_CSV sync…")
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 		defer cancel()
@@ -82,10 +85,34 @@ func main() {
 			logger.Fatalf("CLIENT_CSV incremental sync failed: %v", err)
 		}
 
+		logger.Println("✅ Incremental CLIENT_CSV sync complete.")
+	}
+
+	// Transactions incremental (TRANSACTIONS_CSV)
+	if os.Getenv("RUN_TRANSACTIONS_INCREMENTAL") == "1" {
+		logger.Println("🚀 Running incremental TRANSACTIONS_CSV sync…")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+
 		if err := runner.RunIncrementalTransactionsSync(ctx); err != nil {
 			logger.Fatalf("TRANSACTIONS_CSV incremental sync failed: %v", err)
 		}
 
-		logger.Println("✅ Incremental CSV syncs complete.")
+		logger.Println("✅ Incremental TRANSACTIONS_CSV sync complete.")
+	}
+
+	// Reviews incremental
+	if os.Getenv("RUN_REVIEWS_INCREMENTAL") == "1" {
+		logger.Println("🚀 Running incremental REVIEWS sync…")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+
+		if err := runner.RunIncrementalReviewsSync(ctx); err != nil {
+			logger.Fatalf("REVIEWS incremental sync failed: %v", err)
+		}
+
+		logger.Println("✅ Incremental REVIEWS sync complete.")
 	}
 }
