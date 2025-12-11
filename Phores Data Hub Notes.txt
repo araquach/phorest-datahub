@@ -1,0 +1,36 @@
+# Columns:
+
+item_type = ‘PRODUCT’ or ‘SERVICE’ total_amount  =  main figure for service and product? Total
+net_total_amount = net total ex VAT
+tax_amount = VAT
+
+# product_category_name:
+
++ABC Styling Authentic Beauty Concept
++ABC Care Authentic Beauty Concept
+Retail (Styling Products)
+Extensions Hair
+Gift Pack
+Hair Tools
+Professional use only
+Colour Tubes
+
+Gratuity - defunct
+Freelance Product Sale - defunct
+beauty works - defunct
+Hair Products - defunct
+Balmain - defunct
+Colour Misc - defunct
+Internal Marketing - defunct since 2022-05-13
+Retail products - defunct since 2022-07-28
+Retail (Backwash) -defunct 2022-03-16
+"Retail (Shampoo, Conditioner, Treatment)" - defunct 2022-05-11
+
+All products: 
+item_type = ‘PRODUCT’
+
+Hair Tools (GHD etc): 
+item_type = ‘PRODUCT’ AND product_category_name = ’Hair Tools’
+
+Extensions: 
+item_type = ‘PRODUCT’ AND product_category_name = ’Extensions Hair’
