@@ -88,6 +88,20 @@ func main() {
 		logger.Println("✅ Incremental CLIENT_CSV sync complete.")
 	}
 
+	// Clients via API (live state)
+	if os.Getenv("RUN_CLIENTS_API_INCREMENTAL") == "1" {
+		logger.Println("🚀 Running incremental CLIENTS_API sync…")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+
+		if err := runner.RunIncrementalClientsAPISync(ctx); err != nil {
+			logger.Fatalf("CLIENTS_API incremental sync failed: %v", err)
+		}
+
+		logger.Println("✅ Incremental CLIENTS_API sync complete.")
+	}
+
 	// Transactions incremental (TRANSACTIONS_CSV)
 	if os.Getenv("RUN_TRANSACTIONS_INCREMENTAL") == "1" {
 		logger.Println("🚀 Running incremental TRANSACTIONS_CSV sync…")
