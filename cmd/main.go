@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"github.com/araquach/phorest-datahub/internal/repos"
+	"github.com/araquach/phorest-datahub/internal/services"
 	"os"
 	"time"
 
@@ -136,5 +138,87 @@ func main() {
 			logger.Fatalf("products sync failed: %v", err)
 		}
 		logger.Println("✅ PRODUCTS sync complete.")
+	}
+
+	if os.Getenv("RUN_STOCK_RECONCILE_DRY_RUN") == "1" {
+		logger.Println("🧪 Running STOCK reconcile (dry-run)…")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+
+		sqlDB, err := gdb.DB()
+		if err != nil {
+			logger.Fatalf("failed to get raw sql DB: %v", err)
+		}
+
+		repo := repos.StockReconcileRepo{DB: sqlDB}
+
+		svc := services.StockReconcileService{
+			Repo:       repo,
+			PKBranchID: os.Getenv("SITE_2_BRANCH_ID"),
+			DryRun:     true,
+
+			// FIXED start date — no historical processing before this
+			FromTS: time.Date(2026, time.January, 01, 0, 0, 0, 0, time.UTC),
+			ToTS:   time.Now().UTC(),
+
+			Limit: 500,
+
+			TestBarcode: os.Getenv("STOCK_RECONCILE_TEST_BARCODE"),
+
+			MaxPreview: 25,
+			PrintJSON:  os.Getenv("STOCK_RECONCILE_PRINT_JSON") == "1",
+		}
+
+		if err := svc.Run(ctx); err != nil {
+			logger.Fatalf("stock reconcile dry-run failed: %v", err)
+		}
+
+		logger.Println("✅ STOCK reconcile (dry-run) complete.")
+	}
+
+	if os.Getenv("RUN_STOCK_RECONCILE_LIVE") == "1" {
+		logger.Println("🚨 Running STOCK reconcile (LIVE)…")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+
+		sqlDB, err := gdb.DB()
+		if err != nil {
+			logger.Fatalf("failed to get raw sql DB: %v", err)
+		}
+
+		repo := repos.StockReconcileRepo{DB: sqlDB}
+
+		adjuster := phorest.NewStockAdjuster(
+			"https://api-gateway-eu.phorest.com/third-party-api-server",
+			cfg.PhorestBusiness,
+			cfg.PhorestUsername,
+			cfg.PhorestPassword,
+		)
+
+		svc := services.StockReconcileService{
+			Repo:       repo,
+			Adjuster:   adjuster,
+			PKBranchID: os.Getenv("SITE_2_BRANCH_ID"),
+			DryRun:     false,
+
+			FromTS: time.Date(2026, time.January, 16, 0, 0, 0, 0, time.UTC),
+			ToTS:   time.Now().UTC(),
+
+			Limit: 500,
+
+			// Leave unset for full live:
+			TestBarcode: os.Getenv("STOCK_RECONCILE_TEST_BARCODE"),
+
+			MaxPreview: 25,
+			PrintJSON:  os.Getenv("STOCK_RECONCILE_PRINT_JSON") == "1",
+		}
+
+		if err := svc.Run(ctx); err != nil {
+			logger.Fatalf("stock reconcile LIVE failed: %v", err)
+		}
+
+		logger.Println("✅ STOCK reconcile (LIVE) complete.")
 	}
 }
