@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/araquach/phorest-datahub/internal/repos"
@@ -40,7 +41,7 @@ type StockReconcileService struct {
 
 	// Config
 	PKBranchID string
-	DryRun     bool // this service currently only logs, but keep the flag for future live mode
+	DryRun     bool // dry-run logs only (no Phorest calls, no DB marks)
 
 	// Run limits
 	FromTS time.Time
@@ -48,7 +49,7 @@ type StockReconcileService struct {
 	Limit  int
 
 	// Optional test filter
-	TestBarcode string // if set, only process this barcode
+	TestBarcode string // if set, only process this barcode (NOTE: rows without barcode won't match this anyway)
 
 	// Logging controls
 	MaxPreview int  // how many stock lines to preview per payload
@@ -105,35 +106,64 @@ func (s StockReconcileService) Run(ctx context.Context) error {
 		batches++
 		totalRows += len(rows)
 
-		// Split mapped vs unmapped
+		// Split into:
+		// 1) missingBarcode -> exception (can't call Phorest API without barcode)
+		// 2) unmappedStaff  -> exception (no physical branch override)
+		// 3) mapped         -> normal processing
 		var mapped []repos.PKStockRow
-		var unmapped []repos.PKStockRow
+		var unmappedStaff []repos.PKStockRow
+		var missingBarcode []repos.PKStockRow
 
 		for _, r := range rows {
-			if !r.PhysicalBranchID.Valid || r.PhysicalBranchID.String == "" {
-				unmapped = append(unmapped, r)
+			// Missing barcode (or whitespace) -> exception
+			if strings.TrimSpace(r.Barcode) == "" {
+				missingBarcode = append(missingBarcode, r)
 				continue
 			}
+
+			// Unmapped staff override -> exception
+			if !r.PhysicalBranchID.Valid || strings.TrimSpace(r.PhysicalBranchID.String) == "" {
+				unmappedStaff = append(unmappedStaff, r)
+				continue
+			}
+
+			// Fully valid
 			mapped = append(mapped, r)
 		}
 
 		totalMapped += len(mapped)
-		totalUnmapped += len(unmapped)
+		totalUnmapped += len(unmappedStaff) + len(missingBarcode)
 
-		// ---- RECORD EXCEPTIONS (unmapped staff) ----
-		if len(unmapped) > 0 {
-			s.lg().Printf("[stockrecon] %d unmapped rows -> recording exceptions", len(unmapped))
+		// ---- RECORD EXCEPTIONS (missing barcode) ----
+		if len(missingBarcode) > 0 {
+			s.lg().Printf("[stockrecon] %d rows missing barcode -> recording exceptions", len(missingBarcode))
 
 			if err := s.Repo.InsertStockVirtualTransferExceptions(
 				ctx,
-				unmapped,
+				missingBarcode,
+				"MISSING_BARCODE",
+				nil, // productNameByBarcode
+				nil, // staffNameByID
+			); err != nil {
+				return fmt.Errorf("insert missing-barcode exceptions failed: %w", err)
+			}
+			totalExceptions += len(missingBarcode)
+		}
+
+		// ---- RECORD EXCEPTIONS (unmapped staff) ----
+		if len(unmappedStaff) > 0 {
+			s.lg().Printf("[stockrecon] %d unmapped rows -> recording exceptions", len(unmappedStaff))
+
+			if err := s.Repo.InsertStockVirtualTransferExceptions(
+				ctx,
+				unmappedStaff,
 				"UNMAPPED_STAFF",
 				nil, // productNameByBarcode
 				nil, // staffNameByID
 			); err != nil {
 				return fmt.Errorf("insert exceptions failed: %w", err)
 			}
-			totalExceptions += len(unmapped)
+			totalExceptions += len(unmappedStaff)
 		}
 
 		// Aggregate (mapped only)
@@ -165,7 +195,7 @@ func (s StockReconcileService) Run(ctx context.Context) error {
 		}
 
 		// ---- Logging ----
-		s.lg().Printf("[stockrecon] batch=%d dry-run=%v window=[%s .. %s) limit=%d rows=%d mapped=%d unmapped=%d",
+		s.lg().Printf("[stockrecon] batch=%d dry-run=%v window=[%s .. %s) limit=%d rows=%d mapped=%d unmapped_staff=%d missing_barcode=%d",
 			batches,
 			s.DryRun,
 			s.FromTS.Format(time.RFC3339),
@@ -173,18 +203,35 @@ func (s StockReconcileService) Run(ctx context.Context) error {
 			s.Limit,
 			len(rows),
 			len(mapped),
-			len(unmapped),
+			len(unmappedStaff),
+			len(missingBarcode),
 		)
 
-		// Unmapped preview
-		if len(unmapped) > 0 {
-			n := min(s.MaxPreview, len(unmapped))
-			s.lg().Printf("[stockrecon] unmapped staff override missing (showing %d/%d):", n, len(unmapped))
+		// Unmapped staff preview
+		if len(unmappedStaff) > 0 {
+			n := min(s.MaxPreview, len(unmappedStaff))
+			s.lg().Printf("[stockrecon] unmapped staff override missing (showing %d/%d):", n, len(unmappedStaff))
 			for i := 0; i < n; i++ {
-				u := unmapped[i]
+				u := unmappedStaff[i]
 				s.lg().Printf("  - item_id=%s barcode=%s qty=%d staff_id=%s updated_at_phorest=%s purchased_at=%s",
 					u.TransactionItemID,
 					u.Barcode,
+					u.Quantity,
+					u.StaffID,
+					u.UpdatedAtPhorest.Format(time.RFC3339),
+					formatNullTime(u.PurchasedAt),
+				)
+			}
+		}
+
+		// Missing barcode preview
+		if len(missingBarcode) > 0 {
+			n := min(s.MaxPreview, len(missingBarcode))
+			s.lg().Printf("[stockrecon] missing barcode (showing %d/%d):", n, len(missingBarcode))
+			for i := 0; i < n; i++ {
+				u := missingBarcode[i]
+				s.lg().Printf("  - item_id=%s qty=%d staff_id=%s updated_at_phorest=%s purchased_at=%s",
+					u.TransactionItemID,
 					u.Quantity,
 					u.StaffID,
 					u.UpdatedAtPhorest.Format(time.RFC3339),
@@ -213,9 +260,8 @@ func (s StockReconcileService) Run(ctx context.Context) error {
 
 		// ---- STOP HERE IN DRY RUN ----
 		if s.DryRun {
-			// in dry-run we still loop so you can see *everything* it would process
-			// but we must prevent infinite loops: mark nothing, so we'd keep seeing same rows.
-			// Therefore: break after one batch in dry-run.
+			// In dry-run we must not mark DB rows, otherwise we'd be mutating state.
+			// But if we loop, we'd fetch the same rows again. So stop after one batch.
 			s.lg().Printf("[stockrecon] dry-run=true: stopping after 1 batch (no DB marks written)")
 			return nil
 		}
@@ -224,8 +270,8 @@ func (s StockReconcileService) Run(ctx context.Context) error {
 		if s.Adjuster == nil {
 			return fmt.Errorf("refusing LIVE run: Adjuster is nil")
 		}
-		if len(unmapped) > 0 {
-			s.lg().Printf("[stockrecon] LIVE: continuing with mapped rows; %d rows were exceptioned", len(unmapped))
+		if len(unmappedStaff)+len(missingBarcode) > 0 {
+			s.lg().Printf("[stockrecon] LIVE: continuing with mapped rows; %d rows were exceptioned", len(unmappedStaff)+len(missingBarcode))
 		}
 
 		// ---- LIVE: POST DEDUCT payloads ----
@@ -264,7 +310,6 @@ func (s StockReconcileService) Run(ctx context.Context) error {
 		}
 
 		totalTransfers += len(transferRows)
-
 		s.lg().Printf("[stockrecon] LIVE batch=%d complete: recorded %d transfers", batches, len(transferRows))
 
 		// loop continues: next FetchUnprocessedPKItems will exclude transfers + exceptions

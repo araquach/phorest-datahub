@@ -10,8 +10,11 @@ import (
 type PKStockRow struct {
 	TransactionItemID string
 	Barcode           string
+	ProductName       string
 	Quantity          int
 	StaffID           string
+	StaffFirstName    string
+	StaffLastName     string
 	PhysicalBranchID  sql.NullString
 	UpdatedAtPhorest  time.Time
 	PurchasedAt       sql.NullTime
@@ -48,9 +51,12 @@ func (r *StockReconcileRepo) FetchUnprocessedPKItems(
 	const q = `
 SELECT
   ti.transaction_item_id,
-  ti.product_barcode AS barcode,
-  ti.quantity::int   AS quantity,
+  COALESCE(ti.product_barcode, '') AS barcode,
+  COALESCE(ti.product_name, '')    AS product_name,
+  ti.quantity::int                 AS quantity,
   ti.staff_id,
+  COALESCE(ti.staff_first_name, '') AS staff_first_name,
+  COALESCE(ti.staff_last_name, '')  AS staff_last_name,
   spbo.physical_branch_id,
   ti.updated_at_phorest,
   (t.purchased_date::date + t.purchase_time::time) AS purchased_at
@@ -59,9 +65,8 @@ JOIN transaction_items ti ON ti.transaction_id = t.transaction_id
 LEFT JOIN staff_physical_branch_overrides spbo
   ON spbo.staff_id = ti.staff_id AND spbo.active = true
 WHERE t.branch_id = $1
-  AND ti.product_barcode IS NOT NULL
-  AND ti.product_barcode <> ''
   AND ti.quantity > 0
+  AND ti.item_type = 'PRODUCT'
   AND ti.updated_at_phorest >= $2
   AND ti.updated_at_phorest <  $3
   AND ($5 = '' OR ti.product_barcode = $5)
@@ -91,8 +96,11 @@ LIMIT $4;
 		if err := rows.Scan(
 			&r.TransactionItemID,
 			&r.Barcode,
+			&r.ProductName,
 			&r.Quantity,
 			&r.StaffID,
+			&r.StaffFirstName,
+			&r.StaffLastName,
 			&r.PhysicalBranchID,
 			&r.UpdatedAtPhorest,
 			&r.PurchasedAt,
@@ -160,11 +168,12 @@ ON CONFLICT (transaction_item_id) DO NOTHING;
 	return nil
 }
 
+// File: internal/repos/stock_reconcile_repo.go
 func (r *StockReconcileRepo) InsertStockVirtualTransferExceptions(
 	ctx context.Context,
 	rows []PKStockRow,
 	reason string,
-	// optional extras if you can provide them (otherwise pass empty strings)
+// optional extras if you can provide them (otherwise pass empty strings)
 	productNameByBarcode map[string]string,
 	staffNameByID map[string][2]string, // [first,last]
 ) error {
@@ -209,13 +218,16 @@ ON CONFLICT (transaction_item_id) DO NOTHING;
 			purchasedAt = row.PurchasedAt.Time
 		}
 
-		productName := ""
-		if productNameByBarcode != nil {
+		// Prefer values already present on the transaction item row
+		productName := row.ProductName
+		first := row.StaffFirstName
+		last := row.StaffLastName
+
+		// Optional fallbacks (if you still want to support these maps)
+		if productName == "" && productNameByBarcode != nil {
 			productName = productNameByBarcode[row.Barcode]
 		}
-
-		first, last := "", ""
-		if staffNameByID != nil {
+		if (first == "" && last == "") && staffNameByID != nil {
 			if nm, ok := staffNameByID[row.StaffID]; ok {
 				first, last = nm[0], nm[1]
 			}
