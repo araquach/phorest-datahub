@@ -228,15 +228,27 @@ func copyFile(src, dst string) error {
 func (r *Runner) BootstrapFromCSVsIfNeeded() error {
 	lg := r.Logger
 
+	entities := []string{"clients_csv", "transactions_csv"}
+
+	var watermarkCount int64
+	if err := r.DB.Table("sync_watermarks").Count(&watermarkCount).Error; err != nil {
+		return fmt.Errorf("check sync_watermarks: %w", err)
+	}
+	if watermarkCount > 0 {
+		r.Logger.Printf("⏭  CSV bootstrap skipped: %d sync_watermarks already present", watermarkCount)
+		return nil
+	}
+
 	var count int64
 	if err := r.DB.Table("sync_watermarks").
-		Where("entity IN ?", []string{"clients_csv", "transactions_csv"}).
+		Where("entity IN ?", entities).
+		Distinct("entity").
 		Count(&count).Error; err != nil {
 		return fmt.Errorf("check CSV watermarks: %w", err)
 	}
 
-	if count > 0 {
-		lg.Printf("⏭  CSV bootstrap already done (%d CSV watermarks present); skipping initial CSV imports.", count)
+	if count == int64(len(entities)) {
+		lg.Printf("⏭  CSV bootstrap already done (%d/%d watermarks present); skipping initial CSV imports.", count, len(entities))
 		return nil
 	}
 
@@ -250,6 +262,7 @@ func (r *Runner) BootstrapFromCSVsIfNeeded() error {
 		return fmt.Errorf("bootstrap clients CSVs: %w", err)
 	}
 
+	// Seeds: transactions_csv, clients_csv
 	if err := r.BootstrapWatermarks(); err != nil {
 		return fmt.Errorf("bootstrap watermarks: %w", err)
 	}

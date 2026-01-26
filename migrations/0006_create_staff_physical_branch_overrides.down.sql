@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS public.staff_physical_branch_overrides;

@@ -173,7 +173,7 @@ func (r *StockReconcileRepo) InsertStockVirtualTransferExceptions(
 	ctx context.Context,
 	rows []PKStockRow,
 	reason string,
-// optional extras if you can provide them (otherwise pass empty strings)
+	// optional extras if you can provide them (otherwise pass empty strings)
 	productNameByBarcode map[string]string,
 	staffNameByID map[string][2]string, // [first,last]
 ) error {

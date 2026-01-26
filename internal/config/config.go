@@ -1,8 +1,10 @@
 package config
 
 import (
+	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/araquach/phorest-datahub/internal/util"
 )
@@ -15,11 +17,13 @@ type BranchConfig struct {
 
 // Config centralises all environment and runtime configuration.
 type Config struct {
-	Logger          *log.Logger
-	DatabaseURL     string
-	PhorestUsername string
-	PhorestPassword string
-	PhorestBusiness string
+	Logger             *log.Logger
+	DatabaseURL        string
+	SandboxDatabaseURL string
+	SandboxMode        bool
+	PhorestUsername    string
+	PhorestPassword    string
+	PhorestBusiness    string
 
 	Branches  []BranchConfig
 	ExportDir string
@@ -33,13 +37,15 @@ func Load() *Config {
 	logger.Println("Loading environment configuration...")
 
 	cfg := &Config{
-		Logger:          logger,
-		DatabaseURL:     getEnvOrFail(logger, "DATABASE_URL"),
-		PhorestUsername: getEnvOrFail(logger, "PHOREST_USERNAME"),
-		PhorestPassword: getEnvOrFail(logger, "PHOREST_PASSWORD"),
-		PhorestBusiness: getEnvOrFail(logger, "PHOREST_BUSINESS"),
-		AutoMigrate:     os.Getenv("AUTO_MIGRATE") == "1",
-		ExportDir:       getEnvOrDefault("EXPORT_DIR", "data/exports"),
+		Logger:             logger,
+		DatabaseURL:        getEnvOrFail(logger, "DATABASE_URL"),
+		SandboxDatabaseURL: os.Getenv("SANDBOX_DATABASE_URL"),
+		SandboxMode:        parseBoolEnv(os.Getenv("SANDBOX_MODE")),
+		PhorestUsername:    getEnvOrFail(logger, "PHOREST_USERNAME"),
+		PhorestPassword:    getEnvOrFail(logger, "PHOREST_PASSWORD"),
+		PhorestBusiness:    getEnvOrFail(logger, "PHOREST_BUSINESS"),
+		AutoMigrate:        os.Getenv("AUTO_MIGRATE") == "1",
+		ExportDir:          getEnvOrDefault("EXPORT_DIR", "data/exports"),
 		Branches: []BranchConfig{
 			{
 				Name:     getEnvOrDefault("SITE_1_NAME", "Jakata"),
@@ -61,6 +67,20 @@ func Load() *Config {
 	return cfg
 }
 
+func (c *Config) ActiveDatabaseURL() (string, error) {
+	if c.SandboxMode {
+		if strings.TrimSpace(c.SandboxDatabaseURL) == "" {
+			return "", fmt.Errorf("SANDBOX_MODE is enabled but SANDBOX_DATABASE_URL is empty")
+		}
+		return c.SandboxDatabaseURL, nil
+	}
+
+	if strings.TrimSpace(c.DatabaseURL) == "" {
+		return "", fmt.Errorf("DATABASE_URL is empty")
+	}
+	return c.DatabaseURL, nil
+}
+
 func getEnvOrFail(logger *log.Logger, key string) string {
 	val := os.Getenv(key)
 	if val == "" {
@@ -75,4 +95,13 @@ func getEnvOrDefault(key, def string) string {
 		return def
 	}
 	return val
+}
+
+func parseBoolEnv(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "1", "true", "t", "yes", "y", "on":
+		return true
+	default:
+		return false
+	}
 }

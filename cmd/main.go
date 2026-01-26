@@ -2,10 +2,11 @@ package main
 
 import (
 	"context"
-	"github.com/araquach/phorest-datahub/internal/repos"
-	"github.com/araquach/phorest-datahub/internal/services"
 	"os"
 	"time"
+
+	"github.com/araquach/phorest-datahub/internal/repos"
+	"github.com/araquach/phorest-datahub/internal/services"
 
 	"github.com/joho/godotenv"
 
@@ -25,7 +26,26 @@ func main() {
 	}
 	logger.Printf("📂 Using export dir: %s", cfg.ExportDir)
 
-	gdb, err := db.Open(cfg.DatabaseURL)
+	// -----------------------------
+	// Sandbox-aware DB selection
+	// -----------------------------
+	dsn, err := cfg.ActiveDatabaseURL()
+	if err != nil {
+		logger.Fatalf("database URL resolution failed: %v", err)
+	}
+
+	if cfg.SandboxMode {
+		logger.Println("🧪 SANDBOX MODE ENABLED — using SANDBOX_DATABASE_URL")
+	} else {
+		logger.Println("⚠️  NORMAL MODE — using DATABASE_URL")
+	}
+
+	// Optional safety guard (recommended on this feature branch)
+	// if !cfg.SandboxMode && os.Getenv("ALLOW_NON_SANDBOX") != "1" {
+	// 	logger.Fatalf("refusing to run without sandbox: set SANDBOX_MODE=1 or ALLOW_NON_SANDBOX=1")
+	// }
+
+	gdb, err := db.Open(dsn)
 	if err != nil {
 		logger.Fatalf("DB connection failed: %v", err)
 	}
@@ -38,7 +58,7 @@ func main() {
 
 	if cfg.AutoMigrate {
 		logger.Println("Running SQL migrations...")
-		if err := db.RunMigrations(cfg.DatabaseURL, "migrations", logger); err != nil {
+		if err := db.RunMigrations(dsn, "migrations", logger); err != nil {
 			logger.Fatalf("Database migration failed: %v", err)
 		}
 		logger.Println("✅ Database migrated successfully.")
@@ -220,5 +240,18 @@ func main() {
 		}
 
 		logger.Println("✅ STOCK reconcile (LIVE) complete.")
+	}
+
+	if os.Getenv("RUN_APPOINTMENTS_API_INCREMENTAL") == "1" {
+		logger.Println("🚀 Running incremental APPOINTMENTS_API sync…")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+		defer cancel()
+
+		if err := runner.RunIncrementalAppointmentsAPISync(ctx); err != nil {
+			logger.Fatalf("APPOINTMENTS_API incremental sync failed: %v", err)
+		}
+
+		logger.Println("✅ Incremental APPOINTMENTS_API sync complete.")
 	}
 }

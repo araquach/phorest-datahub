@@ -16,6 +16,11 @@ type clientsWatermarkRow struct {
 	MaxUpdatedAtPh *time.Time `gorm:"column:max_updated_at"`
 }
 
+type apptWatermarkRow struct {
+	BranchID       string     `gorm:"column:branch_id"`
+	MaxUpdatedAtPh *time.Time `gorm:"column:max_updated_at"`
+}
+
 // BootstrapWatermarks inspects existing data and seeds sync_watermarks.
 //
 // - transactions_csv: per-branch, from transaction_items.updated_at_phorest
@@ -78,6 +83,35 @@ func (r *Runner) BootstrapWatermarks() error {
 			clientRow.MaxUpdatedAtPh.UTC().Format(time.RFC3339))
 	} else {
 		lg.Printf("  • no clients.updated_at_phorest found; skipping clients_csv")
+	}
+
+	// 3) Per-branch watermark for appointments_api (seed CSV bootstrap watermark)
+	var apptRows []apptWatermarkRow
+	if err := db.
+		Raw(`
+			SELECT
+				branch_id,
+				MAX(updated_at_phorest) AS max_updated_at
+			FROM appointments_api
+			WHERE updated_at_phorest IS NOT NULL
+			GROUP BY branch_id
+		`).Scan(&apptRows).Error; err != nil {
+		return err
+	}
+
+	for _, row := range apptRows {
+		if row.MaxUpdatedAtPh == nil || row.BranchID == "" {
+			continue
+		}
+		if err := upsertWatermark(db,
+			"appointments_api",
+			&row.BranchID,
+			*row.MaxUpdatedAtPh,
+		); err != nil {
+			return err
+		}
+		lg.Printf("  • seeded watermark for appointments_api_csv / branch %s at %s",
+			row.BranchID, row.MaxUpdatedAtPh.UTC().Format(time.RFC3339))
 	}
 
 	lg.Printf("✅ sync_watermarks bootstrap complete.")
