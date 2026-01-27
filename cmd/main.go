@@ -138,6 +138,20 @@ func main() {
 		logger.Println("✅ Incremental TRANSACTIONS_CSV sync complete.")
 	}
 
+	// Appointments incremental
+	if os.Getenv("RUN_APPOINTMENTS_API_INCREMENTAL") == "1" {
+		logger.Println("🚀 Running incremental APPOINTMENTS_API sync…")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+		defer cancel()
+
+		if err := runner.RunIncrementalAppointmentsAPISync(ctx); err != nil {
+			logger.Fatalf("APPOINTMENTS_API incremental sync failed: %v", err)
+		}
+
+		logger.Println("✅ Incremental APPOINTMENTS_API sync complete.")
+	}
+
 	// Reviews incremental
 	if os.Getenv("RUN_REVIEWS_INCREMENTAL") == "1" {
 		logger.Println("🚀 Running incremental REVIEWS sync…")
@@ -240,18 +254,5 @@ func main() {
 		}
 
 		logger.Println("✅ STOCK reconcile (LIVE) complete.")
-	}
-
-	if os.Getenv("RUN_APPOINTMENTS_API_INCREMENTAL") == "1" {
-		logger.Println("🚀 Running incremental APPOINTMENTS_API sync…")
-
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-		defer cancel()
-
-		if err := runner.RunIncrementalAppointmentsAPISync(ctx); err != nil {
-			logger.Fatalf("APPOINTMENTS_API incremental sync failed: %v", err)
-		}
-
-		logger.Println("✅ Incremental APPOINTMENTS_API sync complete.")
 	}
 }
