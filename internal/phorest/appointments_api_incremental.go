@@ -3,9 +3,6 @@ package phorest
 import (
 	"context"
 	"fmt"
-	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/araquach/phorest-datahub/internal/repos"
@@ -44,7 +41,7 @@ func (r *Runner) RunIncrementalAppointmentsAPISync(ctx context.Context) error {
 	futureDays := getIntEnv("APPOINTMENTS_FUTURE_DAYS", 120)
 
 	// Backfill mode (do not use updated_from AND do not update watermark)
-	ignoreWM := getBoolEnv("APPOINTMENTS_IGNORE_WATERMARK")
+	ignoreWM := getBoolEnv("APPOINTMENTS_IGNORE_WATERMARK", false)
 
 	now := time.Now().UTC()
 	defaultStart := dateOnly(now.AddDate(0, 0, -historyDays))
@@ -230,52 +227,4 @@ func (r *Runner) RunIncrementalAppointmentsAPISync(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func dateOnly(t time.Time) time.Time {
-	y, m, d := t.Date()
-	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
-}
-
-func endOfMonth(t time.Time) time.Time {
-	y, m, _ := t.Date()
-	firstNext := time.Date(y, m, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 1, 0)
-	return firstNext.AddDate(0, 0, -1)
-}
-
-func firstDayOfNextMonth(t time.Time) time.Time {
-	y, m, _ := t.Date()
-	first := time.Date(y, m, 1, 0, 0, 0, 0, time.UTC)
-	return first.AddDate(0, 1, 0)
-}
-
-func getIntEnv(key string, def int) int {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return def
-	}
-	n, err := strconv.Atoi(raw)
-	if err != nil || n <= 0 {
-		return def
-	}
-	return n
-}
-
-func getDateEnv(key string) (*time.Time, error) {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return nil, nil
-	}
-	t, err := time.Parse("2006-01-02", raw)
-	if err != nil {
-		return nil, fmt.Errorf("invalid %s (want YYYY-MM-DD): %w", key, err)
-	}
-	tt := dateOnly(t.UTC())
-	return &tt, nil
-}
-
-func getBoolEnv(key string) bool {
-	raw := strings.TrimSpace(os.Getenv(key))
-	raw = strings.ToLower(raw)
-	return raw == "1" || raw == "true" || raw == "yes"
 }

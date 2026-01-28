@@ -1,7 +1,9 @@
 package phorest
 
 import (
+	"context"
 	"fmt"
+	"github.com/araquach/phorest-datahub/internal/models"
 	"io"
 	"log"
 	"os"
@@ -268,5 +270,129 @@ func (r *Runner) BootstrapFromCSVsIfNeeded() error {
 	}
 
 	lg.Println("✅ CSV bootstrap completed and watermarks seeded.")
+	return nil
+}
+
+func (r *Runner) SyncStaffWorkTimetables(from, to time.Time) error {
+	lg := r.Logger
+
+	client := NewStaffWorkTimetableClient(
+		r.Cfg.PhorestUsername,
+		r.Cfg.PhorestPassword,
+		r.Cfg.PhorestBusiness,
+	)
+
+	const pageSize = 100
+	var activityType *string // optional: wire from env later
+
+	ctx := context.Background()
+
+	for _, br := range r.Cfg.Branches {
+		branchID := br.BranchID
+
+		windowStart := dateOnly(from.UTC())
+		windowLimit := dateOnly(to.UTC())
+
+		for !windowStart.After(windowLimit) {
+			windowEnd := endOfMonth(windowStart)
+			if windowEnd.After(windowLimit) {
+				windowEnd = windowLimit
+			}
+
+			// 1) fetch API into fetched slice (declared in-scope)
+			var fetched []models.StaffWorkTimetableSlot
+
+			page := 0
+			for {
+				rows, totalPages, err := client.FetchWorkTimetablePage(
+					ctx,
+					branchID,
+					windowStart,
+					windowEnd,
+					activityType,
+					page,
+					pageSize,
+				)
+				if err != nil {
+					return fmt.Errorf(
+						"worktimetable fetch branch=%s %s..%s page=%d: %w",
+						branchID,
+						windowStart.Format("2006-01-02"),
+						windowEnd.Format("2006-01-02"),
+						page,
+						err,
+					)
+				}
+
+				if len(rows) == 0 {
+					break
+				}
+
+				fetched = append(fetched, rows...)
+
+				page++
+				if totalPages > 0 && page >= totalPages {
+					break
+				}
+			}
+
+			// 2) transactional replace (delete + insert) — no defer-in-loop
+			if err := func() error {
+				tx := r.DB.Begin()
+				if tx.Error != nil {
+					return tx.Error
+				}
+				defer func() {
+					if p := recover(); p != nil {
+						_ = tx.Rollback()
+						panic(p)
+					}
+				}()
+
+				ttr := repos.NewStaffWorkTimetableRepo(tx, lg)
+
+				if err := ttr.DeleteWindow(branchID, windowStart, windowEnd); err != nil {
+					_ = tx.Rollback()
+					return fmt.Errorf(
+						"worktimetable delete branch=%s %s..%s: %w",
+						branchID,
+						windowStart.Format("2006-01-02"),
+						windowEnd.Format("2006-01-02"),
+						err,
+					)
+				}
+
+				if err := ttr.UpsertBatch(fetched, 2000); err != nil {
+					_ = tx.Rollback()
+					return fmt.Errorf(
+						"worktimetable upsert branch=%s %s..%s: %w",
+						branchID,
+						windowStart.Format("2006-01-02"),
+						windowEnd.Format("2006-01-02"),
+						err,
+					)
+				}
+
+				if err := tx.Commit().Error; err != nil {
+					return err
+				}
+
+				return nil
+			}(); err != nil {
+				return err
+			}
+
+			lg.Printf(
+				"✅ worktimetable/%s committed %s..%s (%d slots)",
+				branchID,
+				windowStart.Format("2006-01-02"),
+				windowEnd.Format("2006-01-02"),
+				len(fetched),
+			)
+
+			windowStart = firstDayOfNextMonth(windowStart)
+		}
+	}
+
 	return nil
 }

@@ -166,6 +166,20 @@ func main() {
 		logger.Println("✅ Incremental REVIEWS sync complete.")
 	}
 
+	// Staff work timetables incremental
+	if os.Getenv("RUN_WORKTIMETABLE_INCREMENTAL") == "1" {
+		logger.Println("🚀 Running incremental WORKTIMETABLE sync…")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+		defer cancel()
+
+		if err := runner.RunIncrementalStaffWorkTimetableSync(ctx); err != nil {
+			logger.Fatalf("WORKTIMETABLE incremental sync failed: %v", err)
+		}
+
+		logger.Println("✅ Incremental WORKTIMETABLE sync complete.")
+	}
+
 	if os.Getenv("RUN_PRODUCTS_SYNC") == "1" {
 		logger.Println("🚀 Running PRODUCTS sync…")
 		if err := runner.SyncProductsFromAPI(); err != nil {

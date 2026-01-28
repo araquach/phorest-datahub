@@ -7,6 +7,11 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	WatermarkWorktimetableRolling      = "worktimetable"
+	WatermarkWorktimetableBackfillDone = "worktimetable_backfill_done"
+)
+
 // WatermarksRepo provides access to the sync_watermarks table.
 type WatermarksRepo struct {
 	db *gorm.DB
@@ -75,4 +80,12 @@ func normaliseBranchID(branchID string) string {
 		return "ALL"
 	}
 	return branchID
+}
+
+func (r *WatermarksRepo) GetWorktimetableBackfillDone(branchID string) (*time.Time, error) {
+	return r.GetLastUpdated(WatermarkWorktimetableBackfillDone, branchID)
+}
+
+func (r *WatermarksRepo) MarkWorktimetableBackfillDone(branchID string, doneAt time.Time) error {
+	return r.UpsertLastUpdated(WatermarkWorktimetableBackfillDone, branchID, doneAt)
 }
