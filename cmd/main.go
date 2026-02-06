@@ -269,4 +269,18 @@ func main() {
 
 		logger.Println("✅ STOCK reconcile (LIVE) complete.")
 	}
+
+	// Breaks incremental
+	if os.Getenv("RUN_BREAKS_API_INCREMENTAL") == "1" {
+		logger.Println("🚀 Running incremental BREAKS_API sync…")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+		defer cancel()
+
+		if err := phorest.RunIncrementalBreaksAPISync(ctx); err != nil {
+			logger.Fatalf("BREAKS_API incremental sync failed: %v", err)
+		}
+
+		logger.Println("✅ Incremental BREAKS_API sync complete.")
+	}
 }
