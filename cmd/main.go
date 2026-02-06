@@ -277,7 +277,7 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 		defer cancel()
 
-		if err := phorest.RunIncrementalBreaksAPISync(ctx); err != nil {
+		if err := runner.RunIncrementalBreaksAPISync(ctx); err != nil {
 			logger.Fatalf("BREAKS_API incremental sync failed: %v", err)
 		}
 
