@@ -83,7 +83,7 @@ func (r *ItemsRepo) UpsertBatch(rows []models.TransactionItem, batchSize int) er
 			return nil
 		}
 		sql := fmt.Sprintf(`
-INSERT INTO transaction_items (%s)
+INSERT INTO raw.transaction_items AS ti (%s)
 VALUES %s
 ON CONFLICT (transaction_item_id) DO UPDATE SET
   -- only the columns that should change on newer data:
@@ -179,8 +179,8 @@ ON CONFLICT (transaction_item_id) DO UPDATE SET
   sale_fee_id = EXCLUDED.sale_fee_id,
   updated_at_phorest = EXCLUDED.updated_at_phorest,
   updated_at = EXCLUDED.updated_at
-WHERE transaction_items.updated_at_phorest IS NULL
-   OR EXCLUDED.updated_at_phorest > transaction_items.updated_at_phorest;`,
+WHERE ti.updated_at_phorest IS NULL
+   OR EXCLUDED.updated_at_phorest > ti.updated_at_phorest;`,
 			strings.Join(cols, ", "),
 			strings.Join(placeholders, ","),
 		)

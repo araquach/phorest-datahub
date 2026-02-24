@@ -48,7 +48,7 @@ func (r *Runner) SyncProductsFromAPI() error {
 		var updatedAfter, updatedBefore *time.Time
 
 		if wm != nil {
-			after := wm.UTC()
+			after := wm.UTC().Add(1 * time.Second)
 			now := time.Now().UTC()
 			updatedAfter = &after
 			updatedBefore = &now

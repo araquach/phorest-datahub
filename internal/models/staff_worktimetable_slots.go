@@ -25,4 +25,4 @@ type StaffWorkTimetableSlot struct {
 	UpdatedAt time.Time `gorm:"column:updated_at"`
 }
 
-func (StaffWorkTimetableSlot) TableName() string { return "staff_worktimetable_slots" }
+func (StaffWorkTimetableSlot) TableName() string { return "raw.staff_worktimetable_slots" }

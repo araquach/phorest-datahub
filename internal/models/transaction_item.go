@@ -165,4 +165,4 @@ type TransactionItem struct {
 	UpdatedAt time.Time
 }
 
-func (TransactionItem) TableName() string { return "transaction_items" }
+func (TransactionItem) TableName() string { return "raw.transaction_items" }

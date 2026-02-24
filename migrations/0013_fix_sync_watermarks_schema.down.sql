@@ -1,0 +1,1 @@
+ALTER TABLE IF EXISTS public.sync_watermarks SET SCHEMA raw;

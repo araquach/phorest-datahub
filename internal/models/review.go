@@ -23,4 +23,4 @@ type Review struct {
 	UpdatedAt time.Time
 }
 
-func (Review) TableName() string { return "reviews" }
+func (Review) TableName() string { return "raw.reviews" }

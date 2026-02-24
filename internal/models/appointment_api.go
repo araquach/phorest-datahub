@@ -46,4 +46,4 @@ type AppointmentAPI struct {
 	UpdatedAt time.Time `gorm:"column:updated_at"`
 }
 
-func (AppointmentAPI) TableName() string { return "appointments_api" }
+func (AppointmentAPI) TableName() string { return "raw.appointments_api" }

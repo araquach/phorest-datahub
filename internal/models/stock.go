@@ -22,7 +22,7 @@ type PhProduct struct {
 }
 
 func (PhProduct) TableName() string {
-	return "ph_products"
+	return "raw.ph_products"
 }
 
 type PhProductStock struct {
@@ -45,7 +45,7 @@ type PhProductStock struct {
 }
 
 func (PhProductStock) TableName() string {
-	return "ph_product_stock"
+	return "raw.ph_product_stock"
 }
 
 type PhProductStockHistory struct {
@@ -59,5 +59,5 @@ type PhProductStockHistory struct {
 }
 
 func (PhProductStockHistory) TableName() string {
-	return "ph_product_stock_history"
+	return "raw.ph_product_stock_history"
 }

@@ -60,9 +60,9 @@ SELECT
   spbo.physical_branch_id,
   ti.updated_at_phorest,
   (t.purchased_date::date + t.purchase_time::time) AS purchased_at
-FROM transactions t
-JOIN transaction_items ti ON ti.transaction_id = t.transaction_id
-LEFT JOIN staff_physical_branch_overrides spbo
+FROM raw.transactions t
+JOIN raw.transaction_items ti ON ti.transaction_id = t.transaction_id
+LEFT JOIN core.staff_physical_branch_overrides spbo
   ON spbo.staff_id = ti.staff_id AND spbo.active = true
 WHERE t.branch_id = $1
   AND ti.quantity > 0
@@ -72,12 +72,12 @@ WHERE t.branch_id = $1
   AND ($5 = '' OR ti.product_barcode = $5)
   AND NOT EXISTS (
     SELECT 1
-    FROM stock_virtual_transfers svt
+    FROM core.stock_virtual_transfers svt
     WHERE svt.transaction_item_id = ti.transaction_item_id
   )
   AND NOT EXISTS (
     SELECT 1
-    FROM stock_virtual_transfer_exceptions svte
+    FROM core.stock_virtual_transfer_exceptions svte
     WHERE svte.transaction_item_id = ti.transaction_item_id
   )
 ORDER BY ti.updated_at_phorest ASC
@@ -122,7 +122,7 @@ func (r *StockReconcileRepo) InsertStockVirtualTransfers(
 	}
 
 	const q = `
-INSERT INTO stock_virtual_transfers (
+INSERT INTO core.stock_virtual_transfers (
   transaction_item_id,
   processed_at,
   from_branch_id,
@@ -185,7 +185,7 @@ func (r *StockReconcileRepo) InsertStockVirtualTransferExceptions(
 	}
 
 	const q = `
-INSERT INTO stock_virtual_transfer_exceptions (
+INSERT INTO core.stock_virtual_transfer_exceptions (
   transaction_item_id,
   reason,
   purchased_at,

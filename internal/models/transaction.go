@@ -27,4 +27,4 @@ type Transaction struct {
 	UpdatedAt time.Time
 }
 
-func (Transaction) TableName() string { return "transactions" }
+func (Transaction) TableName() string { return "raw.transactions" }

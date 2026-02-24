@@ -22,4 +22,4 @@ type Branch struct {
 	UpdatedAt time.Time
 }
 
-func (Branch) TableName() string { return "branches" }
+func (Branch) TableName() string { return "raw.branches" }

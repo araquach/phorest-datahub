@@ -29,4 +29,4 @@ type Staff struct {
 	UpdatedAt time.Time
 }
 
-func (Staff) TableName() string { return "staff" }
+func (Staff) TableName() string { return "raw.staff" }

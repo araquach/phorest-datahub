@@ -41,7 +41,7 @@ func (r *TransactionsRepo) UpsertBatch(rows []models.Transaction, batchSize int)
 			return nil
 		}
 		sql := fmt.Sprintf(`
-INSERT INTO transactions (%s)
+INSERT INTO raw.transactions AS t (%s)
 VALUES %s
 ON CONFLICT (transaction_id) DO UPDATE SET
   branch_id = EXCLUDED.branch_id,
@@ -54,8 +54,8 @@ ON CONFLICT (transaction_id) DO UPDATE SET
   purchase_time = EXCLUDED.purchase_time,
   updated_at_phorest = EXCLUDED.updated_at_phorest,
   updated_at = EXCLUDED.updated_at
-WHERE transactions.updated_at_phorest IS NULL
-   OR EXCLUDED.updated_at_phorest > transactions.updated_at_phorest;`,
+WHERE t.updated_at_phorest IS NULL
+   OR EXCLUDED.updated_at_phorest > t.updated_at_phorest;`,
 			strings.Join(cols, ", "),
 			strings.Join(placeholders, ","),
 		)

@@ -24,4 +24,4 @@ type BreakAPI struct {
 	UpdatedAt time.Time `gorm:"column:updated_at"`
 }
 
-func (BreakAPI) TableName() string { return "breaks_api" }
+func (BreakAPI) TableName() string { return "raw.breaks_api" }

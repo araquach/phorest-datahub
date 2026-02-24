@@ -60,4 +60,4 @@ type ClientAPI struct {
 	UpdatedAt time.Time `gorm:"column:updated_at"`
 }
 
-func (ClientAPI) TableName() string { return "clients_api" }
+func (ClientAPI) TableName() string { return "raw.clients_api" }
